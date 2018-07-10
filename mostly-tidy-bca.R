@@ -1,35 +1,34 @@
-#' ---
-#' title: Bias-corrected and accelerated confidence intervals in the tidyverse
-#' author: Ben Matthews
-#' output: github_document
-#' ---
+
+# Notes -------------------------------------------------------------------
+
+# this script contains two functions: one a simple mean, the other a weighted mean
+
+
+# load packages -----------------------------------------------------------
+
 
 library(boot)
 library(tidyverse)
+library(readxl)
 
-knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>",
-  out.width = "100%"
-)
+# First I want to create my function to sit within `boot()`.
 
-
-#' First I want to create my function to sit within `boot()`.
-
-#' (See more info here - http://www.stat.ucla.edu/~rgould/252w02/bs2.pdf)
-
-# bootstrapping subfunctin ------------------------------------------------
+# (See more info here - http://www.stat.ucla.edu/~rgould/252w02/bs2.pdf)
+# and here https://stackoverflow.com/questions/46231261/bootstrap-weighted-mean-in-r
 
 
-more_mean <- function(x, i){
+# bootstrapping subfunction ------------------------------------------------
+
+
+simple_mean <- function(x, i){
   mean(x[i])
 }
 
-#' and then the function to wrap around `boot()`
+#' and then the function to wrap around `boot()` ---------------------------
 
-my_boot <- 
+my_boot_mean <- 
   function(data, var, Rval){
-    boot_dta <- boot(data[[var]], more_mean, R = Rval)
+    boot_dta <- boot(data[[var]], simple_mean, R = Rval)
     return(boot_dta)
   }
 
@@ -40,25 +39,28 @@ my_boot <-
 
 #' let's test this to see if it works.
 
-test_boot <- my_boot(iris, "Sepal.Length", 500)
+test_boot <- my_boot_mean(iris, "Sepal.Length", 500)
 
 test_boot
 
 #' looks good to me!
 
 
-#' Now let's put together afunction to extract the confidence intervals from the boot object:
+#' Now let's put together a function to extract the confidence intervals from the boot object:
 
 bca_cis <- function(boot_out){
   
   results <- boot.ci(boot_out, type = "bca")
+  mean <- results[["t0"]]
   low_ci <- pluck(results, "bca", 4)
   high_ci <- pluck(results, "bca", 5)
   
   output <- 
     tribble(
-      ~low_ci, ~high_ci,
-      low_ci,   high_ci
+      ~statistic, ~value,
+      "low_ci",   low_ci,
+      "mean", mean,
+      "high_ci", high_ci
     )
   
   return(output)
@@ -81,27 +83,57 @@ sep_length <- sep_length %>%
   nest()
 
 sep_length <- sep_length %>% 
-  mutate(boot_obj = pmap(list(data, "Sepal.Length", 500), my_boot)) %>% 
+  mutate(boot_obj = pmap(list(data, "Sepal.Length", 500), my_boot_mean)) %>% 
   mutate(results = map(boot_obj, bca_cis))
 
 cis <- sep_length %>% 
-  unnest(results) %>% 
-  select(Species, 4:5)
+  unnest(results)
+
+
+# now a similar function for a weighted mean using SIMD ------------------------------
+
+
+
+# reading in data ---------------------------------------------------------
+
+simd_ranks <- read_xlsx(here::here("data", "00510565.xlsx"), sheet = 2)
+
+# renaming varaibles
+names(simd_ranks) <- tolower(names(simd_ranks))
+
+
+# adding fake packages variable
+simd_ranks$fake_total <- rpois(6976, 1)
+
+# weighted mean helper function from 
+# https://stackoverflow.com/questions/46231261/bootstrap-weighted-mean-in-r
+
+samplewmean <- function(d, i, j) {
+  d <- d[i, ]
+  w <- j[i, ]
+  return(weighted.mean(d, w))   
+}
+
+
+# my weighted mean boot wrapper
+
+my_weighted_boot <- 
+  function(df, var, Rval, weightvar){
+    df <- as.data.frame(df)
+    boot_dta <- boot::boot(data = df[var], statistic = samplewmean, R = Rval, j = df[weightvar])
+    return(boot_dta)
+  }
+
+weighted_boot <- 
+  simd_ranks %>% 
+  group_by(council_area) %>% 
+  nest() %>% 
+  mutate(boot_obj = pmap(list(data, "fake_total", 5000, "total_population"), my_weighted_boot)) %>% 
+  mutate(results = map(boot_obj, bca_cis))
+
+cis <- weighted_boot %>% 
+  unnest(results)
 
 cis
 
-#' this gives us CIs in (probably unweildy) wide format. From here we can work
-#' with them as we would anything else!
-
-
-#' Let's calculate the mean in the normal way and then add the CIs
-#' (NB it's probably possible to get the mean to come through with the CIS
-#' and so avoid this step, but I'm not quite sure how :S)
-
-results <- iris %>% 
-  group_by(Species) %>% 
-  summarise(mean = mean(Sepal.Length))
-
-results <- left_join(results, cis, by = "Species")
-
-results
+# looks good to me!
