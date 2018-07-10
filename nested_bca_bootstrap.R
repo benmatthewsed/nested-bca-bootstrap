@@ -119,9 +119,12 @@ samplewmean <- function(d, i, j) {
 
 my_weighted_boot <- 
   function(df, var, Rval, weightvar){
-    df <- as.data.frame(df)
-    boot_dta <- boot::boot(data = df[var], statistic = samplewmean, R = Rval, j = df[weightvar])
-    return(boot_dta)
+    df <- as.data.frame(df) # this was the kicker - i tried for *ages* to get the
+    # boot function to work, but I kept getting error d[i, ] : incorrect number of dimensions.
+    # turning the data into a dataframe helped. seems like this subsetting thing is tricky
+    # see here - https://stackoverflow.com/a/23102084)
+      boot_dta <- boot::boot(data = df[var], statistic = samplewmean, R = Rval, j = df[weightvar])
+      return(boot_dta)
   }
 
 weighted_boot <- 
