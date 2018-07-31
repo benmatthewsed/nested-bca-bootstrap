@@ -140,3 +140,59 @@ cis <- weighted_boot %>%
 cis
 
 # looks good to me!
+
+
+
+# difference in means -----------------------------------------------------
+
+# from https://stats.stackexchange.com/questions/22945/confidence-interval-for-the-difference-of-two-means-using-boot-package-in-r
+
+# NB this 
+
+
+
+library(TraMineR)
+
+# making dataset
+
+data(mvad)
+
+cohort_list <- sample(1990:1992, size = 712, prob = c(1,3,7), replace = TRUE)
+
+mvad$birth_year <- years_list
+mvad$cohort <- cohort_list
+
+mvad <- mutate(mvad, age = birth_year - cohort)
+
+tmp <- 
+mvad %>% 
+  group_by(birth_year, age, cohort) %>% 
+  nest() %>% 
+  mutate(sequence_object = map(data, seq_obj)) %>% 
+  mutate(turbulence = map2(sequence_object, FALSE, seqST)) %>% 
+  select(1:3, 6) %>% 
+  unnest()
+
+tmp
+
+# This only works for balanced data (equal numbers of ages and years)
+
+tmp2 <- 
+  tmp %>% 
+  group_by(birth_year, age, cohort) %>% 
+  summarise(mean_turbulence = mean(turbulence)) %>% 
+  ungroup() %>% 
+  
+  
+
+
+mean_diff <- function(x, year_one, year_two, i){
+  mean1 <-  mean(x[birth_year == glue::glue("{year_one}")])
+  mean2 <-  mean(x[birth_year == glue::glue("{year_one}")])
+  m  <-  m1 - m2
+  return(m)
+}
+
+mean_diff(tmp$turbulence)
+
+
